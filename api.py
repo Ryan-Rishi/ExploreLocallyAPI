@@ -3,10 +3,7 @@ import boto3
 from flask import Flask, request, Response, jsonify
 from flask_cors import CORS, cross_origin
 from botocore.exceptions import ClientError
-from boto3.dynamodb.conditions import Attr
-from decimal import Decimal
-
-
+from boto3.dynamodb.conditions import Key, Attr
 
 app = Flask(__name__)
 CORS(app)
@@ -17,6 +14,7 @@ user_pool_id = 'us-east-1_k1xovBg3P'
 dynamodb = boto3.resource('dynamodb')
 user_table = dynamodb.Table('User-Table')
 advisor_table = dynamodb.Table('Advisor-Table')
+advisor_application_table = dynamodb.Table('Advisor-Application-Table')
 
 
 #http://127.0.0.1:5000/
@@ -43,10 +41,10 @@ def register_user(username, password, email):
     try:
         if not username or not password:
             return "Username, email, and password are required", 401
-
+        
         if email_exists(email):
             return "Email already exists", 401
-
+            
         cognito_client.sign_up(
             ClientId='73tr5iabe4sulif3qnqn0gthsu',
             Username=username,
@@ -67,18 +65,18 @@ def register_user(username, password, email):
     except ClientError as e:
         return Response(response=json.dumps({"error": str(e)}), content_type='application/json', status=400)
 
-
+    
 #http://127.0.0.1:5000/advisors/register/<username>/<password>
-@app.route('/advisors/register/<username>/<password>/<email>', methods = ['POST'])
+@app.route('/advisors/register/<username>/<password>/<email>/<number>/<address>', methods = ['POST'])
 @cross_origin()
-def register_advisor_account(username, password, email):
+def register_advisor_account(username, password, email, number, address):
     try:
         if not username or not password:
             return "Username, email, and password are required", 401
-
+        
         if email_exists(email):
             return "Email already exists", 401
-
+            
         cognito_client.sign_up(
             ClientId='73tr5iabe4sulif3qnqn0gthsu',
             Username=username,
@@ -87,7 +85,14 @@ def register_advisor_account(username, password, email):
                 {'Name': 'email', 'Value': email},
             ]
         )
-        advisor_table.put_item(Item={'username': username})
+
+        item = {
+            'username': username,
+            'phone_number': number,
+            'address': address
+        }
+
+        advisor_application_table.put_item(Item = item)
 
         return "User registered successfully", 200
     except cognito_client.exceptions.UsernameExistsException as e:
@@ -98,26 +103,29 @@ def register_advisor_account(username, password, email):
         return "Method Not Allowed", 405
 
 
+
+
+
 #http://127.0.0.1:5000/advisors/registerinformation/<username>/<password>
-@app.route('/advisors/registerinformation/<username>', methods = ['POST'])
+@app.route('/advisors/registerinformation/<username>/<number>/<address>', methods = ['POST'])
 @cross_origin()
-def register_advisor_information(username):
+def register_advisor_information(username, number, address):
         data = request.json
 
-        languages = data.get('languages')
-        interests = data.get('interests')
+        languages_set = set(data.get('languages', []))
+        interests_set = set(data.get('interests', []))
         location = data.get('location')
 
         item = {
             'username': username,
-            'languages': languages,
-            'interests': interests,
-            'location': location,
-            'rating': 0,
-            'rating_num': 0
+            'phone_number': number,
+            'address': address,
+            'languages': list(languages_set),
+            'interests': list(interests_set),
+            'location': location
         }
 
-        advisor_table.put_item(Item = item)
+        advisor_application_table.put_item(Item = item)
 
         return "Advisor Updated", 200
 
@@ -129,7 +137,7 @@ def register_advisor_information(username):
 def user_login(username, password):
     if not username or not password:
         return "Username and password are required", 401
-
+    
     try:
         response = cognito_client.initiate_auth(
             ClientId= '73tr5iabe4sulif3qnqn0gthsu',
@@ -140,7 +148,13 @@ def user_login(username, password):
             }
         )
 
-        return "User exists and password is correct", 200
+        dynamo_response = user_table.query(KeyConditionExpression=boto3.dynamodb.conditions.Key('username').eq(username))
+        items = dynamo_response.get('Items', [])
+
+        if len(items) > 0:
+            return "User exists and password is correct", 200
+        else:
+            return "User not yet approved", 404
     except cognito_client.exceptions.UserNotFoundException as e:
         return "User not found", 404
     except cognito_client.exceptions.NotAuthorizedException as e:
@@ -148,7 +162,7 @@ def user_login(username, password):
     except ClientError as e:
         return "Method Not Allowed", 405
 
-
+        
 #http://127.0.0.1:5000/advisor/verify/<username>/<password>
 @app.route('/advisors/verify/<username>/<password>', methods = ['GET'])
 @cross_origin()
@@ -164,19 +178,28 @@ def advisor_login(username, password):
                 'PASSWORD': password,
             }
         )
-        return "User exists and password is correct", 200
+
+        dynamo_response = advisor_table.query(KeyConditionExpression=boto3.dynamodb.conditions.Key('username').eq(username))
+        items = dynamo_response.get('Items', [])
+
+        if len(items) > 0:
+            return "User exists and password is correct", 200
+        else:
+            return "User not yet approved", 404
     except cognito_client.exceptions.UserNotFoundException as e:
         return "User not found", 404
     except cognito_client.exceptions.NotAuthorizedException as e:
         return "Password is Incorrect", 402
     except ClientError as e:
         return "Method Not Allowed", 405
+        
+        
 
 #http://127.0.0.1:5000/advisors/query
 @app.route('/advisors/query', methods=['GET'])
 @cross_origin()
 def query_advisors():
-
+    
     languages = request.args.get('languages')
     location = request.args.get('location')
     interests = request.args.get('interests')
@@ -197,27 +220,12 @@ def query_advisors():
         response = advisor_table.scan(**scan_args)
 
         items = response.get('Items', [])
-
-        sorted_items = sorted(
-            items,
-            key=lambda x: (
-                float(x.get('rating', 0)) / float(x['rating_num']) if x.get('rating_num', 1) != 0 else float(x.get('rating', 0))
-            ),
-            reverse=True  # For descending order
-        )
-
-        for item in sorted_items:
-            # Then iterate over each key-value pair in the dictionary
-            for key, value in item.items():
-                # If the value is a Decimal, convert it to a string
-                if isinstance(value, Decimal):
-                    item[key] = str(value)
-        return jsonify(sorted_items)
+        return jsonify(items)
 
     except ClientError as e:
         print(f"An error occurred: {e}")
         return jsonify({"error": str(e)}), 500
-
+        
 #http://127.0.0.1:5000/advisors/rating/<username>
 @app.route('/advisors/rating/<username>', methods=['GET'])
 @cross_origin()

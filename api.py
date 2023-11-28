@@ -9,7 +9,7 @@ from decimal import Decimal
 
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:19006"}})
+CORS(app)
 
 cognito_client = boto3.client('cognito-idp')
 user_pool_id = 'us-east-1_k1xovBg3P'
@@ -322,9 +322,6 @@ def get_advisors():
         return jsonify(sorted_items)
     except Exception as e:
         return Response(response=json.dumps({"error": str(e)}), content_type='application/json', status=500)
-
-
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

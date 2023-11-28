@@ -9,7 +9,7 @@ from decimal import Decimal
 
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/users/*": {"origins": "http://localhost:19006"}})
 
 cognito_client = boto3.client('cognito-idp')
 user_pool_id = 'us-east-1_k1xovBg3P'

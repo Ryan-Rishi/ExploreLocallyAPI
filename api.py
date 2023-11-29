@@ -41,10 +41,10 @@ def register_user(username, password, email):
     try:
         if not username or not password:
             return "Username, email, and password are required", 401
-        
+
         if email_exists(email):
             return "Email already exists", 401
-            
+
         cognito_client.sign_up(
             ClientId='73tr5iabe4sulif3qnqn0gthsu',
             Username=username,
@@ -65,7 +65,7 @@ def register_user(username, password, email):
     except ClientError as e:
         return Response(response=json.dumps({"error": str(e)}), content_type='application/json', status=400)
 
-    
+
 #http://127.0.0.1:5000/advisors/register/<username>/<password>
 @app.route('/advisors/register/<username>/<password>/<email>/<number>/<address>', methods = ['POST'])
 @cross_origin()
@@ -73,10 +73,10 @@ def register_advisor_account(username, password, email, number, address):
     try:
         if not username or not password:
             return "Username, email, and password are required", 401
-        
+
         if email_exists(email):
             return "Email already exists", 401
-            
+
         cognito_client.sign_up(
             ClientId='73tr5iabe4sulif3qnqn0gthsu',
             Username=username,
@@ -137,7 +137,7 @@ def register_advisor_information(username, number, address):
 def user_login(username, password):
     if not username or not password:
         return "Username and password are required", 401
-    
+
     try:
         response = cognito_client.initiate_auth(
             ClientId= '73tr5iabe4sulif3qnqn0gthsu',
@@ -162,7 +162,7 @@ def user_login(username, password):
     except ClientError as e:
         return "Method Not Allowed", 405
 
-        
+
 #http://127.0.0.1:5000/advisor/verify/<username>/<password>
 @app.route('/advisors/verify/<username>/<password>', methods = ['GET'])
 @cross_origin()
@@ -192,19 +192,18 @@ def advisor_login(username, password):
         return "Password is Incorrect", 402
     except ClientError as e:
         return "Method Not Allowed", 405
-        
-        
 
 #http://127.0.0.1:5000/advisors/query
 @app.route('/advisors/query', methods=['GET'])
 @cross_origin()
 def query_advisors():
-    
+
     languages = request.args.get('languages')
     location = request.args.get('location')
     interests = request.args.get('interests')
 
     try:
+        # Initial query with all filters
         scan_args = {
             'FilterExpression': Attr('location').eq(location)
         }
@@ -214,18 +213,30 @@ def query_advisors():
 
         if interests:
             for interest in interests.split(','):
-                print(f"Key: {interest}")
                 scan_args['FilterExpression'] = scan_args['FilterExpression'] & Attr('interests').contains(interest)
 
         response = advisor_table.scan(**scan_args)
-
         items = response.get('Items', [])
+
+        # Check if response is empty and location is set
+        if not items and location:
+            print("Requerying without interests")
+            scan_args.pop('FilterExpression', None)
+            scan_args['FilterExpression'] = Attr('location').eq(location)
+
+            if languages:
+                scan_args['FilterExpression'] = scan_args['FilterExpression'] & Attr('languages').contains(languages)
+
+            response = advisor_table.scan(**scan_args)
+            items = response.get('Items', [])
+
         return jsonify(items)
 
     except ClientError as e:
         print(f"An error occurred: {e}")
         return jsonify({"error": str(e)}), 500
-        
+
+
 #http://127.0.0.1:5000/advisors/rating/<username>
 @app.route('/advisors/rating/<username>', methods=['GET'])
 @cross_origin()
@@ -284,22 +295,28 @@ def rate_advisor(username, rating):
 
         # Update the rating and rating number
         new_rating_num = int(item.get('rating_num', 0)) + 1
-        new_rating = int(item.get('rating', 0)) + rating
+        new_rating_total = int(item.get('rating', 0)) + rating
+        new_average_rating = new_rating_total / new_rating_num
 
-        # Update the item in the DynamoDB table
-        advisor_table.update_item(
-            Key={'username': username},
-            UpdateExpression='SET rating = :r, rating_num = :rn',
-            ExpressionAttributeValues={
-                ':r': new_rating,
-                ':rn': new_rating_num
-            }
-        )
-
-        return jsonify({'message': 'Rating updated successfully'}), 200
+        if new_average_rating < 3:
+            # Delete the advisor from the table if the average rating is less than 3
+            advisor_table.delete_item(Key={'username': username})
+            return jsonify({'message': 'Advisor deleted due to low rating'}), 200
+        else:
+            # Update the item in the DynamoDB table
+            advisor_table.update_item(
+                Key={'username': username},
+                UpdateExpression='SET rating = :r, rating_num = :rn',
+                ExpressionAttributeValues={
+                    ':r': new_rating_total,
+                    ':rn': new_rating_num
+                }
+            )
+            return jsonify({'message': 'Rating updated successfully'}), 200
     except Exception as e:
         print(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 #http://127.0.0.1:5000/advisors/getall
@@ -332,4 +349,4 @@ def get_advisors():
         return Response(response=json.dumps({"error": str(e)}), content_type='application/json', status=500)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5002, debug=True)

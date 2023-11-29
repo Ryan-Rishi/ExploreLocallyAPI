@@ -1,5 +1,6 @@
 import json
 import boto3
+import traceback
 from flask import Flask, request, Response, jsonify
 from flask_cors import CORS, cross_origin
 from botocore.exceptions import ClientError
@@ -9,7 +10,7 @@ app = Flask(__name__)
 CORS(app)
 
 cognito_client = boto3.client('cognito-idp')
-user_pool_id = 'us-east-1_k1xovBg3P'
+user_pool_id = 'us-east-1_nhPJOw9sr'
 
 dynamodb = boto3.resource('dynamodb')
 advisor_table = dynamodb.Table('Advisor-Table')
@@ -70,6 +71,31 @@ def deny_username(username):
         return "Advisor Denied", 200
     except Exception as e:
         return Response(response=json.dumps({"error": str(e)}), content_type='application/json', status=500)
+    
+@app.route('/advisors_application/verify/<username>/<password>', methods = ['GET'])
+@cross_origin()
+def admin_login(username, password):
+    if not username or not password:
+        return "Username and password are required", 401
+    
+    try:
+        response = cognito_client.initiate_auth(
+            ClientId= '6i3masfta5g1u0g499720549rf',
+            AuthFlow='USER_PASSWORD_AUTH',
+            AuthParameters={
+                'USERNAME': username,
+                'PASSWORD': password,
+            }
+        )
+
+        return "User exists and password is correct", 200
+    except cognito_client.exceptions.UserNotFoundException as e:
+        return "User not found", 404
+    except cognito_client.exceptions.NotAuthorizedException as e:
+        return "Password is Incorrect", 402
+    except ClientError as e:
+        traceback.print_exc()
+        return "Method Not Allowed", 405
 
 
 

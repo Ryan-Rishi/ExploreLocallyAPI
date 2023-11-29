@@ -298,7 +298,7 @@ def rate_advisor(username, rating):
         new_rating_total = int(item.get('rating', 0)) + rating
         new_average_rating = new_rating_total / new_rating_num
 
-        if new_average_rating < 3:
+        if new_average_rating < 3 and new_rating_num > 10:
             # Delete the advisor from the table if the average rating is less than 3
             advisor_table.delete_item(Key={'username': username})
             return jsonify({'message': 'Advisor deleted due to low rating'}), 200

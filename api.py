@@ -287,9 +287,6 @@ def get_advisor_rating(username):
             'error': str(e)
         }), 500
 
-# Route to update the rating of an advisor
-# The <username> is a placeholder for the advisor's username
-# The <rating> is a placeholder for the rating given by the user, expected to be a number from 1 to 5
 #http://127.0.0.1:5000/advisors/rate/<username>/<int:rating>
 @app.route('/advisors/rate/<username>/<int:rating>', methods=['POST'])
 @cross_origin()
@@ -348,9 +345,7 @@ def get_advisors():
         )
 
         for item in sorted_items:
-            # Then iterate over each key-value pair in the dictionary
             for key, value in item.items():
-                # If the value is a Decimal, convert it to a string
                 if isinstance(value, Decimal):
                     item[key] = str(value)
 

@@ -230,7 +230,18 @@ def query_advisors():
             response = advisor_table.scan(**scan_args)
             items = response.get('Items', [])
 
-        return jsonify(items)
+        sorted_items = sorted(
+        items,
+        key=lambda x: (
+            float(x.get('rating', 0)) / float(x['rating_num']) if x.get('rating_num', 1) != 0 else float(x.get('rating', 0))
+            ),reverse=True
+        )
+
+        for item in sorted_items:
+            for key, value in item.items():
+                if isinstance(value, Decimal):
+                    item[key] = str(value)
+        return jsonify(sorted_items)
 
     except ClientError as e:
         print(f"An error occurred: {e}")

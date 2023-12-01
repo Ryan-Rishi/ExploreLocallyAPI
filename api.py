@@ -4,6 +4,7 @@ from flask import Flask, request, Response, jsonify
 from flask_cors import CORS, cross_origin
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
+from decimal import Decimal
 
 app = Flask(__name__)
 CORS(app)
